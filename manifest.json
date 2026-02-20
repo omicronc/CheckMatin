@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "CheckMatin",
+  "version": "1.0",
+  "description": "Extension de vérification de sites web : captures d'écran, vérification de contenu, etc.",
+  "permissions": [
+        "storage",
+        "tabs",
+        "scripting",
+        "alarms",
+        "clipboardWrite"
+    ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "CheckMatin"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "scripts": ["background.js"]
+  }
+}
