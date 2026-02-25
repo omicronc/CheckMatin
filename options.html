@@ -25,26 +25,29 @@
 <body>
     <div class="container">
         <header>
-            <h1>CheckMatin Dashboard</h1>
+            <h1>CheckMatin Dashboard <small id="app-version" style="font-size: 0.5em; color: #7f8c8d; font-weight: normal;"></small></h1>
             
             <!-- Main Actions -->
-            <div class="actions" style="margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;">
+            <div class="actions">
                 
                 <!-- Left Group -->
-                <div style="display: flex; gap: 10px;">
+                <div class="actions-left">
                     <button id="add-site-btn" class="accent">+ Ajouter un site</button>
-                    <button id="config-manual-btn" class="secondary" style="border: 1px solid #ccc;">⚙️ Tâches Manuelles</button>
+                    <button id="config-manual-btn" class="secondary secondary-outline">⚙️ Tâches Manuelles</button>
                     <button id="run-all-btn" class="primary">▶️ Tout vérifier</button>
                 </div>
 
                 <!-- Right Group -->
-                <div style="display: flex; gap: 10px;">
+                <div class="actions-right">
                     <button id="email-report" class="secondary">📧 Copier Rapport</button>
                     <button id="download-report" class="secondary">💾 Télécharger</button>
                     <button id="export-btn" class="secondary">⬇️ Exporter</button>
                     <button id="import-btn" class="secondary">⬆️ Importer</button>
-                    <input type="file" id="import-file" accept=".json" style="display: none;">
-                    <button id="clear-results-btn" class="secondary" style="color: #c62828;">🗑️ Effacer</button>
+                    <input type="file" id="import-file" accept=".json" class="input-hidden">
+                    <button id="clear-results-btn" class="secondary btn-danger">🗑️ Effacer</button>
+                    <input type="url" id="shared-json-url" placeholder="URL JSON réseau" class="shared-json-input">
+                    <button id="connect-shared-json-btn" class="secondary">🔗 Connexion JSON</button>
+                    <span id="shared-json-status" class="alert shared-json-status">JSON inaccessible ou modifié</span>
                 </div>
             </div>
         </header>
@@ -76,68 +79,91 @@
                     <label><input type="checkbox" id="check-screenshot"> Capture d'écran</label>
                 </div>
                 <div class="checkbox-group">
-                    <label><input type="checkbox" id="check-content"> Vérification de contenu</label>
-                </div>
-                
-                <div id="content-options" class="sub-options hidden">
-                    <div class="form-group">
-                        <label for="content-selector">Sélecteur CSS</label>
-                        <input type="text" id="content-selector" placeholder="ex: .welcome-message">
-                    </div>
-                    <div class="form-group">
-                        <label for="content-text">Texte attendu</label>
-                        <input type="text" id="content-text" placeholder="ex: Bienvenue">
+                    <div id="content-group" class="option-group">
+                        <div class="group-header">
+                            <label><input type="checkbox" id="check-content"> Vérification de contenu</label>
+                            <span id="content-summary" class="group-summary"></span>
+                        </div>
+                        <div id="content-options" class="sub-options hidden">
+                            <div class="form-group">
+                                <label for="content-selector">Sélecteur CSS</label>
+                                <input type="text" id="content-selector" placeholder="ex: .welcome-message">
+                            </div>
+                            <div class="form-group">
+                                <label for="content-text">Texte attendu</label>
+                                <input type="text" id="content-text" placeholder="ex: Bienvenue">
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
                 <div class="checkbox-group">
-                    <label><input type="checkbox" id="check-date"> Vérification de Date/Fraîcheur</label>
-                </div>
-                <div id="date-options" class="sub-options hidden">
-                    <div class="form-group">
-                        <label for="date-selector">Sélecteur CSS de la date</label>
-                        <input type="text" id="date-selector" placeholder="ex: .last-updated, time">
-                    </div>
-                    <div class="form-group">
-                        <label for="date-max-age">Âge maximum (en minutes)</label>
-                        <input type="number" id="date-max-age" placeholder="ex: 60" min="1">
-                        <small style="display:block; color:#666;">L'extension tentera de lire la date dans le texte de l'élément.</small>
+                    <div id="date-group" class="option-group">
+                        <div class="group-header">
+                            <label><input type="checkbox" id="check-date"> Vérification de Date/Fraîcheur</label>
+                            <span id="date-summary" class="group-summary"></span>
+                        </div>
+                        <div id="date-options" class="sub-options hidden">
+                            <div class="form-group">
+                                <label for="date-selector">Sélecteur CSS de la date</label>
+                                <input type="text" id="date-selector" placeholder="ex: .last-updated, time">
+                            </div>
+                            <div class="form-group">
+                                <label for="date-max-age">Âge maximum (en minutes)</label>
+                                <input type="number" id="date-max-age" placeholder="ex: 60" min="1">
+                                <small class="help-text">L'extension tentera de lire la date dans le texte de l'élément.</small>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="checkbox-group">
-                    <label><input type="checkbox" id="check-manual"> Validation Manuelle (Popup sur site)</label>
+                    <div id="manual-group" class="option-group">
+                        <div class="group-header">
+                            <label><input type="checkbox" id="check-manual"> Validation Manuelle (Popup sur site)</label>
+                            <span id="manual-summary" class="group-summary"></span>
+                        </div>
+                    </div>
                 </div>
             </fieldset>
 
             <fieldset>
                 <legend>Authentification (Optionnel)</legend>
                 <div class="checkbox-group">
-                    <label><input type="checkbox" id="check-auth"> Se connecter avant les tests</label>
-                </div>
-                
-                <div id="auth-options" class="sub-options hidden">
-                    <div class="form-group">
-                        <label for="auth-user">Utilisateur / Email</label>
-                        <input type="text" id="auth-user" placeholder="mon.email@exemple.com">
-                    </div>
-                    <div class="form-group">
-                        <label for="auth-pass">Mot de passe</label>
-                        <input type="password" id="auth-pass" placeholder="********">
-                        <div style="font-size: 0.8em; color: #27ae60; margin-top: 5px;">
-                            🔒 Info : Les identifiants sont chiffrés (AES-256) et stockés localement. Ils sont protégés par votre mot de passe maître.
+                    <div id="auth-group" class="option-group">
+                        <div class="group-header">
+                            <label><input type="checkbox" id="check-auth"> Se connecter avant les tests</label>
+                            <span id="auth-summary" class="group-summary"></span>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="auth-user-sel">Sélecteur CSS Champ Utilisateur</label>
-                        <input type="text" id="auth-user-sel" placeholder="ex: #username (laisser vide pour auto-détection)">
-                    </div>
-                    <div class="form-group">
-                        <label for="auth-pass-sel">Sélecteur CSS Champ Mot de passe</label>
-                        <input type="text" id="auth-pass-sel" placeholder="ex: #password (laisser vide pour auto-détection)">
-                    </div>
-                    <div class="form-group">
-                        <label for="auth-submit-sel">Sélecteur CSS Bouton Connexion</label>
-                        <input type="text" id="auth-submit-sel" placeholder="ex: button[type='submit'] (laisser vide pour auto-détection)">
+                        
+                        <div id="auth-options" class="sub-options hidden">
+                            <div class="form-group">
+                                <label for="auth-user">Utilisateur / Email</label>
+                                <input type="text" id="auth-user" placeholder="mon.email@exemple.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="auth-pass">Mot de passe</label>
+                                <input type="password" id="auth-pass" placeholder="********">
+                                <div class="auth-info">
+                                    🔒 Info : Les identifiants sont chiffrés (AES-256) et stockés localement. Ils sont protégés par votre mot de passe maître.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="auth-user-sel">Sélecteur CSS Champ Utilisateur</label>
+                                <input type="text" id="auth-user-sel" placeholder="ex: #username (laisser vide pour auto-détection)">
+                            </div>
+                            <div class="form-group">
+                                <label for="auth-pass-sel">Sélecteur CSS Champ Mot de passe</label>
+                                <input type="text" id="auth-pass-sel" placeholder="ex: #password (laisser vide pour auto-détection)">
+                            </div>
+                            <div class="form-group">
+                                <label for="auth-submit-sel">Sélecteur CSS Bouton Connexion</label>
+                                <input type="text" id="auth-submit-sel" placeholder="ex: button[type='submit'] (laisser vide pour auto-détection)">
+                            </div>
+                            <div class="form-group">
+                                <label><input type="checkbox" id="auth-basic"> Ce site utilise une authentification HTTP Basic (popup navigateur)</label>
+                                <small class="help-text help-text-tight">Dans ce cas, les identifiants seront envoyés via l'URL.</small>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </fieldset>
@@ -151,14 +177,14 @@
 
     <!-- Modal Master Password -->
     <div id="mp-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-content modal-content-sm">
             <span class="close-modal" id="mp-close">&times;</span>
             <h2 id="mp-title">Mot de Passe Maître</h2>
             <p id="mp-desc">Veuillez entrer votre mot de passe maître.</p>
             
             <div class="form-group">
-                <input type="password" id="mp-input" placeholder="Votre mot de passe maître" style="width: 100%; padding: 10px; font-size: 1.2em;">
-                <p id="mp-error" style="color: #e74c3c; display: none;">Mot de passe incorrect</p>
+                <input type="password" id="mp-input" placeholder="Votre mot de passe maître" class="mp-input">
+                <p id="mp-error" class="mp-error">Mot de passe incorrect</p>
             </div>
 
             <div class="form-actions">
@@ -170,20 +196,20 @@
 
     <!-- Modal Export Choice -->
     <div id="export-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-content modal-content-md">
             <span class="close-modal" id="export-close">&times;</span>
             <h2>Type d'Exportation</h2>
             <p>Choisissez le type d'exportation souhaité :</p>
             
-            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
-                <button id="export-full-btn" class="primary" style="padding: 15px; text-align: left;">
+            <div class="export-options">
+                <button id="export-full-btn" class="primary export-option">
                     <strong>🔒 Sauvegarde Complète (Personnelle)</strong><br>
-                    <span style="font-size: 0.85em; font-weight: normal;">Inclut les mots de passe chiffrés et la configuration du mot de passe maître. À utiliser pour vos propres sauvegardes.</span>
+                    <span class="export-option-desc">Inclut les mots de passe chiffrés et la configuration du mot de passe maître. À utiliser pour vos propres sauvegardes.</span>
                 </button>
                 
-                <button id="export-safe-btn" class="secondary" style="padding: 15px; text-align: left;">
+                <button id="export-safe-btn" class="secondary export-option">
                     <strong>📤 Partage / Safe (Sans Mots de Passe)</strong><br>
-                    <span style="font-size: 0.85em; font-weight: normal;">Exclut tous les mots de passe et données sensibles. Idéal pour partager votre configuration avec des collègues.</span>
+                    <span class="export-option-desc">Exclut tous les mots de passe et données sensibles. Idéal pour partager votre configuration avec des collègues.</span>
                 </button>
             </div>
         </div>
@@ -191,20 +217,20 @@
 
     <!-- Modal Report Note -->
     <div id="note-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content modal-content-lg">
             <h2>Finalisation du Rapport</h2>
             
-            <fieldset style="margin-bottom: 15px;">
+            <fieldset class="fieldset-compact">
                 <legend>Vérifications Manuelles</legend>
-                <div id="manual-checks-list" class="checkbox-group" style="max-height: 150px; overflow-y: auto;">
+                <div id="manual-checks-list" class="checkbox-group manual-checks-list">
                     <!-- Checkboxes injected by JS -->
-                    <p style="color:#666; font-style:italic;">Aucune tâche configurée.</p>
+                    <p class="empty-text">Aucune tâche configurée.</p>
                 </div>
             </fieldset>
 
             <p>Note générale (Optionnel) :</p>
             <div class="form-group">
-                <textarea id="report-note-input" rows="3" placeholder="Ex: RAS ce matin, tout est opérationnel." style="width: 100%; padding: 10px; font-family: sans-serif;"></textarea>
+                <textarea id="report-note-input" rows="3" placeholder="Ex: RAS ce matin, tout est opérationnel." class="note-textarea"></textarea>
             </div>
 
             <div class="modal-actions">
@@ -216,17 +242,17 @@
 
     <!-- Modal Config Manual Checks -->
     <div id="manual-config-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content modal-content-lg">
             <span class="close-modal" id="manual-config-close">&times;</span>
             <h2>Configuration des Tâches Manuelles</h2>
             <p>Ajoutez ici les tâches que vous devez vérifier physiquement (Téléphone, Applications lourdes, etc.).</p>
             
-            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                <input type="text" id="new-manual-task" placeholder="Nouvelle tâche (ex: Tester Ligne Fixe)" style="flex: 1; padding: 8px;">
+            <div class="manual-add-row">
+                <input type="text" id="new-manual-task" placeholder="Nouvelle tâche (ex: Tester Ligne Fixe)" class="manual-task-input">
                 <button id="add-manual-task-btn" class="primary">Ajouter</button>
             </div>
 
-            <ul id="manual-tasks-list" style="list-style: none; padding: 0; max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
+            <ul id="manual-tasks-list" class="manual-tasks-list">
                 <!-- List items injected by JS -->
             </ul>
 

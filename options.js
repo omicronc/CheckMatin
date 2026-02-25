@@ -62,11 +62,24 @@ const authPass = document.getElementById('auth-pass');
 const authUserSel = document.getElementById('auth-user-sel');
 const authPassSel = document.getElementById('auth-pass-sel');
 const authSubmitSel = document.getElementById('auth-submit-sel');
+const authBasic = document.getElementById('auth-basic');
 const checkManual = document.getElementById('check-manual');
 const downloadReportBtn = document.getElementById('download-report');
 const exportBtn = document.getElementById('export-btn');
 const importBtn = document.getElementById('import-btn');
 const importFile = document.getElementById('import-file');
+const sharedJsonUrlInput = document.getElementById('shared-json-url');
+const connectSharedJsonBtn = document.getElementById('connect-shared-json-btn');
+const sharedJsonStatusEl = document.getElementById('shared-json-status');
+
+const contentGroup = document.getElementById('content-group');
+const dateGroup = document.getElementById('date-group');
+const manualGroup = document.getElementById('manual-group');
+const authGroup = document.getElementById('auth-group');
+const contentSummary = document.getElementById('content-summary');
+const dateSummary = document.getElementById('date-summary');
+const manualSummary = document.getElementById('manual-summary');
+const authSummary = document.getElementById('auth-summary');
 
 // Export Modal Elements
 const exportModal = document.getElementById('export-modal');
@@ -244,6 +257,14 @@ const MasterPasswordManager = {
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     console.log("CheckMatin: DOMContentLoaded");
+    
+    // Display Version
+    const manifest = browserAPI.runtime.getManifest();
+    const versionEl = document.getElementById('app-version');
+    if (versionEl) {
+        versionEl.textContent = `v${manifest.version}`;
+    }
+
     loadSites();
     
     if (siteListEl) {
@@ -278,12 +299,25 @@ addBtn.addEventListener('click', () => openModal());
 cancelBtn.addEventListener('click', closeModal);
 saveBtn.addEventListener('click', saveSite);
 checkContent.addEventListener('change', toggleContentOptions);
+contentSelector.addEventListener('input', toggleContentOptions);
+contentText.addEventListener('input', toggleContentOptions);
 checkDate.addEventListener('change', toggleDateOptions);
+dateSelector.addEventListener('input', toggleDateOptions);
+dateMaxAge.addEventListener('input', toggleDateOptions);
 checkAuth.addEventListener('change', toggleAuthOptions);
+authUser.addEventListener('input', toggleAuthOptions);
+authBasic.addEventListener('change', toggleAuthOptions);
+checkManual.addEventListener('change', () => {
+    manualGroup.classList.toggle('collapsed', !checkManual.checked);
+    manualSummary.textContent = checkManual.checked ? 'Activé' : 'Désactivé';
+});
 runAllBtn.addEventListener('click', runChecks);
 emailReportBtn.addEventListener('click', () => generateReport('mailto'));
 downloadReportBtn.addEventListener('click', () => generateReport('download'));
 clearBtn.addEventListener('click', clearResults);
+if (connectSharedJsonBtn) {
+    connectSharedJsonBtn.addEventListener('click', connectSharedJson);
+}
 
 exportBtn.addEventListener('click', () => {
     exportModal.classList.remove('hidden');
@@ -494,138 +528,358 @@ async function loadSites() {
         sites = data.sites || [];
         manualTasks = data.manualTasks || [];
         renderList();
+        await initSharedJson();
     } catch (e) {
         console.error("Error loading data:", e);
     }
 }
 
-function renderList() {
-    siteListEl.innerHTML = '';
-    sites.forEach(site => {
-        const card = document.createElement('div');
-        card.className = 'site-card';
-        
-        // 1. Title (H3)
-        const h3 = document.createElement('h3');
-        h3.style.marginBottom = '5px';
-        h3.textContent = site.name || site.url;
-        card.appendChild(h3);
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return '[' + value.map(v => stableStringify(v)).join(',') + ']';
+    } else if (value && typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+    } else {
+        return JSON.stringify(value);
+    }
+}
 
-        // 2. URL
-        const urlDiv = document.createElement('div');
-        urlDiv.style.fontSize = '0.8em';
-        urlDiv.style.color = '#666';
-        urlDiv.style.marginBottom = '10px';
-        urlDiv.style.overflowWrap = 'break-word';
-        urlDiv.textContent = site.url;
-        card.appendChild(urlDiv);
+function cleanSharedUrl(raw) {
+    if (!raw) return '';
+    let url = raw.trim();
+    if ((url.startsWith('"') && url.endsWith('"')) || (url.startsWith("'") && url.endsWith("'"))) {
+        url = url.slice(1, -1).trim();
+    }
+    return url;
+}
 
-        // 3. Badges
-        const badgesDiv = document.createElement('div');
-        badgesDiv.style.marginTop = '10px';
-        badgesDiv.style.fontSize = '0.85em';
-        
-        const createBadge = (label, active) => {
-            const span = document.createElement('span');
-            span.style.marginRight = '10px';
-            span.textContent = active ? `✅ ${label}` : `⬜ ${label}`;
-            return span;
-        };
+async function computeHash(text) {
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest('SHA-256', enc.encode(text));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
-        badgesDiv.appendChild(createBadge('Status', site.checks.status));
-        badgesDiv.appendChild(createBadge('Capture', site.checks.screenshot));
-        badgesDiv.appendChild(createBadge('Contenu', site.checks.content));
-        badgesDiv.appendChild(createBadge('Date', site.checks.date));
-        badgesDiv.appendChild(createBadge('Manuel', site.checks.manual));
-        badgesDiv.appendChild(createBadge('Auth', site.checks.auth));
-        card.appendChild(badgesDiv);
+function setSharedStatus(message, mode) {
+    if (!sharedJsonStatusEl) return;
+    sharedJsonStatusEl.textContent = message;
+    sharedJsonStatusEl.style.display = 'inline-block';
+    sharedJsonStatusEl.classList.remove('alert-ok');
+    sharedJsonStatusEl.classList.remove('alert-error');
+    sharedJsonStatusEl.classList.remove('alert-blink');
+    if (mode === 'ok') {
+        sharedJsonStatusEl.classList.add('alert-ok');
+    } else {
+        sharedJsonStatusEl.classList.add('alert-error');
+        sharedJsonStatusEl.classList.add('alert-blink');
+    }
+}
 
-        // 4. Last Result
-        if (site.lastCheck) {
-            const resultDiv = document.createElement('div');
-            resultDiv.style.marginTop = '10px';
-            resultDiv.style.borderTop = '1px solid #eee';
-            resultDiv.style.paddingTop = '10px';
+function hideSharedStatus() {
+    if (!sharedJsonStatusEl) return;
+    sharedJsonStatusEl.style.display = 'none';
+    sharedJsonStatusEl.classList.remove('alert-blink');
+}
 
-            const dateDiv = document.createElement('div');
-            dateDiv.style.marginBottom = '5px';
-            
-            const statusBadge = document.createElement('span');
-            statusBadge.className = site.lastCheck.success ? 'status-badge status-success' : 'status-badge status-fail';
-            statusBadge.textContent = site.lastCheck.success ? 'OK' : 'ERREUR';
-            
-            const dateSmall = document.createElement('small');
-            dateSmall.textContent = ' ' + new Date(site.lastCheck.timestamp).toLocaleString();
-            
-            dateDiv.appendChild(statusBadge);
-            dateDiv.appendChild(dateSmall);
-            resultDiv.appendChild(dateDiv);
+async function fetchRemoteJsonViaBackground(url) {
+    try {
+        const res = await browserAPI.runtime.sendMessage({ type: 'fetchRemoteJson', url });
+        if (res && res.ok && res.text) {
+            return res.text;
+        }
+        throw new Error(res && res.error ? res.error : 'Fetch error');
+    } catch (e) {
+        throw e;
+    }
+}
 
-            if (site.lastCheck.error) {
-                const errorDiv = document.createElement('div');
-                errorDiv.style.color = 'red';
-                errorDiv.style.fontSize = '0.8em';
-                errorDiv.style.marginBottom = '5px';
-                errorDiv.textContent = site.lastCheck.error;
-                resultDiv.appendChild(errorDiv);
-            }
+async function fetchRemoteJson(url) {
+    try {
+        const resp = await fetch(url, { credentials: 'omit' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const text = await resp.text();
+        return text;
+    } catch (e) {
+        return await fetchRemoteJsonViaBackground(url);
+    }
+}
 
-            if (site.lastCheck.screenshot) {
-                const link = document.createElement('a');
-                link.href = site.lastCheck.screenshot;
-                link.target = '_blank';
-                
-                const img = document.createElement('img');
-                img.src = site.lastCheck.screenshot;
-                img.className = 'screenshot-preview';
-                img.style.maxHeight = '150px';
-                img.style.display = 'block';
-                img.style.borderRadius = '4px';
-                
-                link.appendChild(img);
-                resultDiv.appendChild(link);
-            }
-            card.appendChild(resultDiv);
+async function mergeRemoteData(remote) {
+    let changed = false;
+    const previousSites = Array.isArray(sites) ? JSON.parse(JSON.stringify(sites)) : [];
+    let sitesPayload = null;
+    if (Array.isArray(remote)) {
+        sitesPayload = remote;
+    } else if (remote && Array.isArray(remote.sites)) {
+        sitesPayload = remote.sites;
+    }
+
+    if (sitesPayload) {
+        if (!sites || sites.length === 0) {
+            sites = sitesPayload.map(rs => {
+                const nextChecks = { ...(rs.checks || {}) };
+                nextChecks.authPassEncrypted = null;
+                nextChecks.authPass = null;
+                return {
+                    id: rs.id || Date.now().toString(),
+                    url: rs.url,
+                    name: rs.name || '',
+                    checks: nextChecks,
+                    lastCheck: null
+                };
+            });
+            changed = true;
         } else {
-            const noResultDiv = document.createElement('div');
-            noResultDiv.style.marginTop = '10px';
-            noResultDiv.style.color = '#999';
-            noResultDiv.style.fontSize = '0.9em';
-            noResultDiv.textContent = 'Aucune vérification effectuée';
-            card.appendChild(noResultDiv);
+            sitesPayload.forEach(rs => {
+                let idx = -1;
+                if (rs.id) {
+                    idx = sites.findIndex(s => s.id === rs.id);
+                }
+                if (idx === -1) {
+                    idx = sites.findIndex(s => s.url === rs.url);
+                }
+                if (idx !== -1) {
+                    const old = sites[idx];
+                    const nextChecks = { ...(old.checks || {}), ...(rs.checks || {}) };
+                    const next = {
+                        id: old.id,
+                        url: rs.url || old.url,
+                        name: rs.name !== undefined ? rs.name : old.name,
+                        checks: nextChecks,
+                        lastCheck: old.lastCheck || null
+                    };
+                    const before = stableStringify(old);
+                    const after = stableStringify(next);
+                    if (before !== after) {
+                        sites[idx] = next;
+                        changed = true;
+                    }
+                } else {
+                    const nextChecks = { ...(rs.checks || {}) };
+                    nextChecks.authPassEncrypted = null;
+                    nextChecks.authPass = null;
+                    const newSite = {
+                        id: rs.id || Date.now().toString(),
+                        url: rs.url,
+                        name: rs.name || '',
+                        checks: nextChecks,
+                        lastCheck: null
+                    };
+                    sites.push(newSite);
+                    changed = true;
+                }
+            });
         }
 
-        // 5. Buttons
-        const btnDiv = document.createElement('div');
-        btnDiv.style.marginTop = '15px';
-        btnDiv.style.display = 'flex';
-        btnDiv.style.gap = '10px';
+        const authById = new Map();
+        const authByUrl = new Map();
+        previousSites.forEach(s => {
+            const c = s.checks || {};
+            if (c && (c.authPass || c.authPassEncrypted)) {
+                const authData = {
+                    auth: c.auth,
+                    authUser: c.authUser,
+                    authPass: c.authPass,
+                    authPassEncrypted: c.authPassEncrypted,
+                    authUserSel: c.authUserSel,
+                    authPassSel: c.authPassSel,
+                    authSubmitSel: c.authSubmitSel,
+                    authBasic: c.authBasic
+                };
+                if (s.id) authById.set(s.id, authData);
+                if (s.url) authByUrl.set(s.url, authData);
+            }
+        });
 
-        const runBtn = document.createElement('button');
-        runBtn.className = 'primary btn-run';
-        runBtn.dataset.id = site.id;
-        runBtn.textContent = '▶️ Vérifier';
-        runBtn.style.flex = '1';
+        if (authById.size > 0 || authByUrl.size > 0) {
+            sites = sites.map(s => {
+                const c = { ...(s.checks || {}) };
+                let authData = null;
+                if (s.id && authById.has(s.id)) {
+                    authData = authById.get(s.id);
+                } else if (s.url && authByUrl.has(s.url)) {
+                    authData = authByUrl.get(s.url);
+                }
+                if (authData) {
+                    c.auth = authData.auth !== undefined ? authData.auth : true;
+                    c.authUser = authData.authUser;
+                    c.authPass = authData.authPass;
+                    c.authPassEncrypted = authData.authPassEncrypted;
+                    c.authUserSel = authData.authUserSel;
+                    c.authPassSel = authData.authPassSel;
+                    c.authSubmitSel = authData.authSubmitSel;
+                    c.authBasic = authData.authBasic;
+                    changed = true;
+                }
+                return { ...s, checks: c };
+            });
+        }
+    }
+    if (remote && Array.isArray(remote.manualTasks)) {
+        manualTasks = remote.manualTasks.slice();
+        changed = true;
+    }
+    if (changed) {
+        await storage.set({ sites, manualTasks });
+        renderList();
+    }
+    return changed;
+}
 
-        const editBtn = document.createElement('button');
-        editBtn.className = 'secondary btn-edit';
-        editBtn.dataset.id = site.id;
-        editBtn.textContent = 'Éditer';
+async function checkSharedJson() {
+    const data = await storage.get(['sharedJsonUrl', 'sharedJsonLastHash']);
+    const stored = data.sharedJsonUrl || '';
+    const currentInput = sharedJsonUrlInput ? sharedJsonUrlInput.value : '';
+    const raw = stored || currentInput;
+    const url = cleanSharedUrl(raw);
+    if (sharedJsonUrlInput && url) sharedJsonUrlInput.value = url;
+    if (!url) {
+        hideSharedStatus();
+        return;
+    }
+    try {
+        const text = await fetchRemoteJson(url);
+        let parsed = null;
+        try {
+            parsed = JSON.parse(text);
+        } catch (e) {
+            setSharedStatus('JSON invalide', 'error');
+            return;
+        }
+        const normalized = stableStringify(parsed);
+        const hash = await computeHash(normalized);
+        const last = data.sharedJsonLastHash || '';
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'secondary btn-delete';
-        deleteBtn.style.backgroundColor = '#ffebee';
-        deleteBtn.style.color = '#c62828';
-        deleteBtn.dataset.id = site.id;
-        deleteBtn.textContent = 'Supprimer';
+        const didMerge = await mergeRemoteData(parsed);
 
-        btnDiv.appendChild(runBtn);
-        btnDiv.appendChild(editBtn);
-        btnDiv.appendChild(deleteBtn);
-        card.appendChild(btnDiv);
+        if (!last) {
+            await storage.set({ sharedJsonLastHash: hash });
+            setSharedStatus('JSON OK', 'ok');
+        } else if (last !== hash) {
+            await storage.set({ sharedJsonLastHash: hash });
+            setSharedStatus(didMerge ? 'JSON modifié' : 'JSON vérifié', 'error');
+        } else {
+            setSharedStatus(didMerge ? 'JSON resynchronisé' : 'JSON OK', 'ok');
+        }
+    } catch (e) {
+        setSharedStatus('JSON inaccessible', 'error');
+    }
+}
 
-        siteListEl.appendChild(card);
+async function connectSharedJson() {
+    if (!sharedJsonUrlInput) return;
+    const url = cleanSharedUrl(sharedJsonUrlInput.value);
+    if (!url) {
+        await storage.set({ sharedJsonUrl: '' });
+        hideSharedStatus();
+        return;
+    }
+    await storage.set({ sharedJsonUrl: url });
+    await checkSharedJson();
+}
+
+async function initSharedJson() {
+    const data = await storage.get(['sharedJsonUrl']);
+    if (sharedJsonUrlInput && data.sharedJsonUrl) {
+        sharedJsonUrlInput.value = data.sharedJsonUrl;
+    }
+    await checkSharedJson();
+}
+
+function createElement(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined) el.textContent = text;
+    return el;
+}
+
+function createBadge(label, active) {
+    const span = createElement('span', 'card-badge', active ? `✅ ${label}` : `⬜ ${label}`);
+    return span;
+}
+
+function buildSiteCard(site) {
+    const card = createElement('div', 'site-card');
+
+    const h3 = createElement('h3', 'card-title', site.name || site.url);
+    card.appendChild(h3);
+
+    const urlDiv = createElement('div', 'card-url', site.url);
+    card.appendChild(urlDiv);
+
+    const badgesDiv = createElement('div', 'card-badges');
+    badgesDiv.appendChild(createBadge('Status', site.checks.status));
+    badgesDiv.appendChild(createBadge('Capture', site.checks.screenshot));
+    badgesDiv.appendChild(createBadge('Contenu', site.checks.content));
+    badgesDiv.appendChild(createBadge('Date', site.checks.date));
+    badgesDiv.appendChild(createBadge('Manuel', site.checks.manual));
+    badgesDiv.appendChild(createBadge('Auth', site.checks.auth));
+    card.appendChild(badgesDiv);
+
+    if (site.lastCheck) {
+        const resultDiv = createElement('div', 'card-result');
+
+        const dateDiv = createElement('div', 'card-result-date');
+
+        const statusBadge = createElement(
+            'span',
+            site.lastCheck.success ? 'status-badge status-success' : 'status-badge status-fail',
+            site.lastCheck.success ? 'OK' : 'ERREUR'
+        );
+        const dateSmall = createElement('small', '', ' ' + new Date(site.lastCheck.timestamp).toLocaleString());
+        dateDiv.appendChild(statusBadge);
+        dateDiv.appendChild(dateSmall);
+        resultDiv.appendChild(dateDiv);
+
+        if (site.lastCheck.error) {
+            const errorDiv = createElement('div', 'card-result-error', site.lastCheck.error);
+            resultDiv.appendChild(errorDiv);
+        }
+
+        if (site.lastCheck.screenshot) {
+            const link = createElement('a');
+            link.href = site.lastCheck.screenshot;
+            link.target = '_blank';
+
+            const img = createElement('img', 'screenshot-preview');
+            img.src = site.lastCheck.screenshot;
+            link.appendChild(img);
+            resultDiv.appendChild(link);
+        }
+
+        card.appendChild(resultDiv);
+    } else {
+        const noResultDiv = createElement('div', 'card-no-result', 'Aucune vérification effectuée');
+        card.appendChild(noResultDiv);
+    }
+
+    const btnDiv = createElement('div', 'card-actions');
+
+    const runBtn = createElement('button', 'primary btn-run', '▶️ Vérifier');
+    runBtn.dataset.id = site.id;
+    runBtn.classList.add('btn-flex');
+
+    const editBtn = createElement('button', 'secondary btn-edit', 'Éditer');
+    editBtn.dataset.id = site.id;
+
+    const deleteBtn = createElement('button', 'secondary btn-delete btn-delete-danger', 'Supprimer');
+    deleteBtn.dataset.id = site.id;
+
+    btnDiv.appendChild(runBtn);
+    btnDiv.appendChild(editBtn);
+    btnDiv.appendChild(deleteBtn);
+    card.appendChild(btnDiv);
+
+    return card;
+}
+
+function renderList() {
+    siteListEl.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    sites.forEach(site => {
+        frag.appendChild(buildSiteCard(site));
     });
+    siteListEl.appendChild(frag);
 }
 
 function openModal(site = null) {
@@ -662,6 +916,7 @@ function openModal(site = null) {
         authUserSel.value = site.checks.authUserSel || '';
         authPassSel.value = site.checks.authPassSel || '';
         authSubmitSel.value = site.checks.authSubmitSel || '';
+        authBasic.checked = !!site.checks.authBasic;
     } else {
         editingId = null;
         urlInput.value = '';
@@ -687,10 +942,13 @@ function openModal(site = null) {
         authUserSel.value = '';
         authPassSel.value = '';
         authSubmitSel.value = '';
+        authBasic.checked = false;
     }
     toggleContentOptions();
     toggleDateOptions();
     toggleAuthOptions();
+    manualGroup.classList.toggle('collapsed', !checkManual.checked);
+    manualSummary.textContent = checkManual.checked ? 'Activé' : 'Désactivé';
     modal.classList.remove('hidden');
 }
 
@@ -702,24 +960,42 @@ function closeModal() {
 function toggleContentOptions() {
     if (checkContent.checked) {
         contentOptions.classList.remove('hidden');
+        contentGroup.classList.remove('collapsed');
+        const sel = contentSelector.value ? contentSelector.value : '(aucun sélecteur)';
+        const txt = contentText.value ? `, texte: "${contentText.value}"` : '';
+        contentSummary.textContent = `Activé (${sel}${txt})`;
     } else {
         contentOptions.classList.add('hidden');
+        contentGroup.classList.add('collapsed');
+        contentSummary.textContent = 'Désactivé';
     }
 }
 
 function toggleDateOptions() {
     if (checkDate.checked) {
         dateOptions.classList.remove('hidden');
+        dateGroup.classList.remove('collapsed');
+        const sel = dateSelector.value ? dateSelector.value : '(aucun sélecteur)';
+        const age = dateMaxAge.value ? `${dateMaxAge.value} min` : 'n.c.';
+        dateSummary.textContent = `Activé (${sel}, max: ${age})`;
     } else {
         dateOptions.classList.add('hidden');
+        dateGroup.classList.add('collapsed');
+        dateSummary.textContent = 'Désactivé';
     }
 }
 
 function toggleAuthOptions() {
     if (checkAuth.checked) {
         authOptions.classList.remove('hidden');
+        authGroup.classList.remove('collapsed');
+        const mode = authBasic && authBasic.checked ? 'HTTP Basic' : 'Formulaire';
+        const u = authUser.value ? authUser.value : 'utilisateur n.c.';
+        authSummary.textContent = `Activé (${mode}, ${u})`;
     } else {
         authOptions.classList.add('hidden');
+        authGroup.classList.add('collapsed');
+        authSummary.textContent = 'Désactivé';
     }
 }
 
@@ -794,7 +1070,8 @@ async function saveSite() {
             authPassEncrypted: finalAuthPassEncrypted,
             authUserSel: authUserSel.value,
             authPassSel: authPassSel.value,
-            authSubmitSel: authSubmitSel.value
+            authSubmitSel: authSubmitSel.value,
+            authBasic: authBasic.checked
         },
         lastCheck: editingId ? (sites.find(s => s.id === editingId)?.lastCheck) : null
     };
@@ -1413,8 +1690,23 @@ async function checkSite(site, windowId) {
     let tab = null;
 
     try {
+        const useBasicAuth = site.checks.auth && site.checks.authBasic && site.checks.authUser && site.checks.authPass;
+        let targetUrl = site.url;
+        if (useBasicAuth) {
+            try {
+                const u = new URL(site.url);
+                u.username = site.checks.authUser;
+                u.password = site.checks.authPass;
+                targetUrl = u.toString();
+                result.logs.push("Authentification HTTP Basic via URL.");
+            } catch (e) {
+                console.warn("Failed to build basic auth URL", e);
+                result.logs.push("Impossible de construire l'URL d'authentification HTTP Basic.");
+            }
+        }
+
         // 1. Create Tab
-        tab = await browserAPI.tabs.create({ windowId, url: site.url, active: true });
+        tab = await browserAPI.tabs.create({ windowId, url: targetUrl, active: true });
         
         // 2. Wait for load
         await new Promise((resolve, reject) => {
@@ -1431,8 +1723,8 @@ async function checkSite(site, windowId) {
             browserAPI.tabs.onUpdated.addListener(listener);
         });
 
-        // 2.5 Auth (Login) if enabled
-        if (site.checks.auth) {
+        // 2.5 Auth (Login) if enabled (HTML form mode only)
+        if (site.checks.auth && !(site.checks.authBasic && site.checks.authUser && site.checks.authPass)) {
              console.log("Attempting authentication...");
              result.logs.push("Tentative de connexion...");
              
@@ -1561,11 +1853,26 @@ async function checkSite(site, windowId) {
                 btnFail.onclick = () => send(false);
             };
 
-            // Initial Injection
-            await browserAPI.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: injectManualUI
-            });
+            // Initial Injection with Retry
+            const tryInjectManualUI = async (retries = 3) => {
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        await browserAPI.scripting.executeScript({
+                            target: { tabId: tab.id },
+                            func: injectManualUI
+                        });
+                        return;
+                    } catch (e) {
+                        console.warn(`Injection attempt ${i+1} failed:`, e);
+                        // If it's a "Frame with ID 0" error, it usually means navigation is happening.
+                        // We wait a bit and retry.
+                        if (i < retries - 1) await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+                console.error("Manual UI injection failed after retries. Waiting for navigation...");
+            };
+
+            await tryInjectManualUI();
 
             // Listeners
             let onUpdatedListener;
@@ -1588,10 +1895,7 @@ async function checkSite(site, windowId) {
                         if (tabId === tab.id && info.status === 'complete') {
                             // Re-inject with a small delay to ensure page is ready
                             setTimeout(() => {
-                                browserAPI.scripting.executeScript({
-                                    target: { tabId: tab.id },
-                                    func: injectManualUI
-                                }).catch(err => console.log("Re-injection failed:", err));
+                                tryInjectManualUI();
                             }, 500);
                         }
                     };

@@ -24,3 +24,12 @@ console.log("CheckMatin Background script loaded");
 browserAPI.action.onClicked.addListener(() => {
     browserAPI.runtime.openOptionsPage();
 });
+
+browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && message.type === 'fetchRemoteJson' && message.url) {
+        fetch(message.url, { credentials: 'omit' })
+            .then(resp => resp.text().then(text => sendResponse({ ok: resp.ok, status: resp.status, text })))
+            .catch(err => sendResponse({ ok: false, error: err.message }));
+        return true;
+    }
+});
